@@ -2,24 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const play = require('play-dl');
-const crypto = require('crypto');
 
 const app = express();
 app.use(cors());
-
-// JioSaavn MP3 Decryptor
-function decryptJioSaavnUrl(encryptedUrl) {
-    if (!encryptedUrl) return "";
-    try {
-        const key = Buffer.from("38346539313238327a65633463303661", 'hex');
-        const decipher = crypto.createDecipheriv('des-ecb', key, '');
-        let decrypted = decipher.update(encryptedUrl, 'base64', 'utf8');
-        decrypted += decipher.final('utf8');
-        return decrypted.replace("_96.mp4", "_320.mp4");
-    } catch(e) {
-        return "";
-    }
-}
 
 // JioSaavn Arama
 app.get('/api/jiosaavn/search', async (req, res) => {
@@ -39,8 +24,8 @@ app.get('/api/jiosaavn/search', async (req, res) => {
     if (!data.results || data.results.length === 0) return res.json({ data: [] });
 
     const songs = data.results.map((item) => {
-      let mediaUrl = decryptJioSaavnUrl(item.more_info?.encrypted_media_url);
       let imageUrl = (item.image || "").replace("150x150", "500x500");
+      let encryptedUrl = item.more_info?.encrypted_media_url || "";
 
       return {
         id: item.id,
@@ -48,8 +33,8 @@ app.get('/api/jiosaavn/search', async (req, res) => {
         artistName: item.more_info?.singers || item.more_info?.primary_artists || "Bilinmeyen",
         image: imageUrl,
         durationSeconds: parseInt(item.more_info?.duration || "0", 10),
-        audioUrl: mediaUrl,
-        downloadUrl: mediaUrl,
+        audioUrl: encryptedUrl ? `/api/jiosaavn/stream?url=${encodeURIComponent(encryptedUrl)}` : "",
+        downloadUrl: encryptedUrl ? `/api/jiosaavn/stream?url=${encodeURIComponent(encryptedUrl)}` : "",
         platform: 'JioSaavn'
       };
     });
@@ -57,6 +42,26 @@ app.get('/api/jiosaavn/search', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// JioSaavn Stream Redirect
+app.get('/api/jiosaavn/stream', async (req, res) => {
+    try {
+        const { url } = req.query;
+        if (!url) return res.status(400).send("No url");
+        
+        const authUrl = `https://www.jiosaavn.com/api.php?bitrate=320&api_version=4&_format=json&ctx=web6dot0&_marker=0&__call=song.generateAuthToken&url=${encodeURIComponent(url)}`;
+        const response = await axios.get(authUrl);
+        
+        if (response.data && response.data.auth_url) {
+            // Soru isaretinden sonraki kismi silmek bazen CDN sorununu onler, ama auth_url lazim
+            res.redirect(response.data.auth_url);
+        } else {
+            res.status(500).send("No auth url");
+        }
+    } catch(err) {
+        res.status(500).send("Stream error");
+    }
 });
 
 // SoundCloud Token Alıcı
@@ -83,8 +88,8 @@ app.get('/api/soundcloud/search', async (req, res) => {
       artistName: t.publisher?.name || 'Bilinmeyen',
       image: t.thumbnail || '',
       durationSeconds: t.durationInSec || 0,
-      audioUrl: `/api/soundcloud/stream?url=${encodeURIComponent(t.url)}`, // Oynatma anında çevrilecek
-      downloadUrl: t.url,
+      audioUrl: `/api/soundcloud/stream?url=${encodeURIComponent(t.url)}`,
+      downloadUrl: t.url, // Download might need a different handling
       platform: 'SoundCloud'
     }));
     res.json({ data: tracks });
