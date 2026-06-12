@@ -54,13 +54,12 @@ app.get('/api/jiosaavn/stream', async (req, res) => {
         const response = await axios.get(authUrl);
         
         if (response.data && response.data.auth_url) {
-            // Soru isaretinden sonraki kismi silmek bazen CDN sorununu onler, ama auth_url lazim
-            res.redirect(response.data.auth_url);
+            res.json({ url: response.data.auth_url });
         } else {
-            res.status(500).send("No auth url");
+            res.status(500).json({ error: "No auth url" });
         }
     } catch(err) {
-        res.status(500).send("Stream error");
+        res.status(500).json({ error: "Stream error" });
     }
 });
 
@@ -104,9 +103,9 @@ app.get('/api/soundcloud/stream', async (req, res) => {
         const { url } = req.query;
         await ensureScToken();
         const stream = await play.stream(url);
-        res.redirect(stream.url); // Direk gerçek sese yönlendir
+        res.json({ url: stream.url }); 
     } catch(err) {
-        res.status(500).send("Stream error");
+        res.status(500).json({ error: "Stream error" });
     }
 });
 
